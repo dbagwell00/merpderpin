@@ -1,12 +1,27 @@
 # Telegram Bot thing for Radio Messages
 
-This Takes MP3s (trunking recorder) of Radio Messages (Unitrunker) and converts them to Text using Whisper.
+This Takes MP3s (trunking recorder) of Radio Messages (Unitrunker) and converts them to Text using Whisper (https://github.com/openai/whisper).
 It sends them to a Telegram bot, which listens for questions.
 Questions are processed using Langchain/ChatAI to produce answers.
 
-It expects an nvidia gpu.
-It expects a volume to mount a network share (where the mp3s live), mounted into /data on the container.
+You can Google how telebot and Botfather work to get the API and Channel ID stuff.
+You'll need to register to get a api key for OPENAI_API_KEY.
 
+I have 4 usb sdr plugged into a ANTRONIX 9-PORT VRA900. This listens to a shared statewide (edacs) system.
+I use Unitrunker (which is windows only) to 'follow' the control channel and then tune the other 3 radios to 'listen'.
+
+A second windows app called Trunking Recorder writes the messages to Mp3 on a shared network folder hosted by my NAS.
+
+This program was written to convert those MP3s to Text, and then send them via Telebot to Telegram.  I wanted to be able to read the messages.
+
+Whisper does a decent job of taking the audio and making it text.  It works better on longer messages, so I filter (both in Trunking Recorder, and in the script) based on the length of the call.
+
+My big GPU (an RTX 3090) is on my gaming PC, so I run this in Docker.  You might not need a GPU to run Whisper (it supports CPU) but since I have one I'm using it.
+Since my radios record the MP3s to a file share, you have to tell Docker where the volume is, and allow the container to mount it.  You could also write samba things into the Dockerfile I guess, but this was easier.
+
+Some of the derpy things in there are because the script will attempt to load a file that's still 'open' by the other computer writing the MP3 to the filesystem.
+
+I launch it like this:
 docker run -it --entrypoint=bash --gpus all --mount source=radio,target=/data wwhisper
 
 
