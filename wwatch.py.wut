@@ -56,16 +56,13 @@ def langthing(question):
 
     # Run the RetrievalQA instance with the given question and store the results
     results = qa.run(question)
-
     return results
+
 def process_file(file_path):
     attempt_count = 0
     max_attempts = 10
-    # Check if the file has already been processed
     if file_path in processed_files:
         return
-
-    # Wait for the file to finish writing
     while True:
         try:
             with open(file_path, 'rb') as f:
@@ -73,7 +70,6 @@ def process_file(file_path):
                 if f.read(128).startswith(b'TAG'):
                     break
         except Exception as error:
-            # print(error)
             time.sleep(1)
             attempt_count += 1
             if attempt_count >= max_attempts:
