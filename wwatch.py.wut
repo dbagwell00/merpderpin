@@ -19,16 +19,10 @@ from langchain.vectorstores import Chroma
 from langchain.chains import RetrievalQA
 from langchain.llms import OpenAI
 from langchain.text_splitter import CharacterTextSplitter
+from langchain.chains.question_answering import load_qa_chain
 
-
-os.environ['_BARD_API_KEY']="<ur key>"
 os.environ['OPENAI_API_KEY']="<ur other key>"
-
-
-
-
 model = whisper.load_model("large")
-
 bot = telebot.TeleBot("<ur bot>")
 chat_id = "<chat id>"
 start_time = time.time()
@@ -43,14 +37,12 @@ def langthing(question):
     documents = loader.load()
     text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
     texts = text_splitter.split_documents(documents)
-
     embeddings = OpenAIEmbeddings()
     vectordb = Chroma.from_documents(texts, embeddings)
-    qa = RetrievalQA(llm=OpenAI(), retriever=vectordb.as_retriever())
-
+    qa_chain = load_qa_chain(llm=OpenAI(), chain_type="map_reduce")
+    qa = RetrievalQA(combine_documents_chain=qa_chain, retriever=vectordb.as_retriever())
     results = qa.run(question)
     return results
-
 
 def process_file(file_path):
     attempt_count = 0
