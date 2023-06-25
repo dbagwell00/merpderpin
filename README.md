@@ -12,7 +12,11 @@ You'll need to register to get a api key for OPENAI_API_KEY.
 I have 4 usb sdr plugged into a ANTRONIX 9-PORT VRA900. This listens to a shared statewide (edacs) system.
 I use Unitrunker (which is windows only) to 'follow' the control channel and then tune the other 3 radios to 'listen'.
 
+Unitrunker can be found here: https://groups.google.com/g/unitrunker
+
 A second windows app called Trunking Recorder writes the messages to Mp3 on a shared network folder hosted by my NAS.
+
+Trunking Recorder can be found here: https://groups.google.com/g/trunking-recorder
 
 This program was written to convert those MP3s to Text, and then send them via Telebot to Telegram.  I wanted to be able to read the messages.
 
