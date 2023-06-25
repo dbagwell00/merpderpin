@@ -134,7 +134,7 @@ def echo_message(message):
     results = langthing(message.text)
     result_thing = (f"Asked: {message.text}.  Result: {results}")
     # This sends the response to the same chat_id as the other messages.
-    # You could do like bot.send_message(message, result_thing) to have it sent to your chat with the bot.
+    # You could do like bot.reply_to(message, result_thing) to have it sent to your chat with the bot.
     bot.send_message(chat_id, result_thing)
 
 
