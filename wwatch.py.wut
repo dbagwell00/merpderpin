@@ -33,17 +33,31 @@ embeddings = OpenAIEmbeddings()
 
 
 def langthing(question):
+
+    # Load documents from the './messages' directory using TextLoader
     loader = TextLoader("./messages")
     documents = loader.load()
+
+    # Split documents into smaller chunks using CharacterTextSplitter
     text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
     texts = text_splitter.split_documents(documents)
-    embeddings = OpenAIEmbeddings()
-    vectordb = Chroma.from_documents(texts, embeddings)
-    qa_chain = load_qa_chain(llm=OpenAI(), chain_type="map_reduce")
-    qa = RetrievalQA(combine_documents_chain=qa_chain, retriever=vectordb.as_retriever())
-    results = qa.run(question)
-    return results
 
+    # Create embeddings using OpenAIEmbeddings
+    embeddings = OpenAIEmbeddings()
+
+    # Initialize a Chroma vector store using embeddings created from the documents
+    vectordb = Chroma.from_documents(texts, embeddings)
+
+    # Load a question-answering chain which uses an OpenAI LLM (language model) and 'map_reduce' chain type
+    qa_chain = load_qa_chain(llm=OpenAI(), chain_type="map_reduce")
+
+    # Initialize a RetrievalQA instance using the combine_documents_chain (qa_chain) and chroma vector store 'vectordb'
+    qa = RetrievalQA(combine_documents_chain=qa_chain, retriever=vectordb.as_retriever())
+
+    # Run the RetrievalQA instance with the given question and store the results
+    results = qa.run(question)
+
+    return results
 def process_file(file_path):
     attempt_count = 0
     max_attempts = 10
