@@ -49,8 +49,10 @@ def langthing(question):
     vectordb = Chroma.from_documents(texts, embeddings)
 
     # Load a question-answering chain which uses an OpenAI LLM (language model) and 'map_reduce' chain type
-    qa_chain = load_qa_chain(llm=OpenAI(), chain_type="map_reduce")
-
+    # "stuff" seems to not complain
+    # qa_chain = load_qa_chain(llm=OpenAI(), chain_type="map_reduce")
+    qa_chain = load_qa_chain(llm=OpenAI(), chain_type="stuff")
+    
     # Initialize a RetrievalQA instance using the combine_documents_chain (qa_chain) and chroma vector store 'vectordb'
     qa = RetrievalQA(combine_documents_chain=qa_chain, retriever=vectordb.as_retriever())
 
