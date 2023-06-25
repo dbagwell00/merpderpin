@@ -54,8 +54,9 @@ def langthing(question):
     qa_chain = load_qa_chain(llm=OpenAI(), chain_type="stuff")
     
     # Initialize a RetrievalQA instance using the combine_documents_chain (qa_chain) and chroma vector store 'vectordb'
-    qa = RetrievalQA(combine_documents_chain=qa_chain, retriever=vectordb.as_retriever())
-
+    # qa = RetrievalQA(combine_documents_chain=qa_chain, retriever=vectordb.as_retriever())
+    qa = RetrievalQA.from_chain_type(llm=OpenAI(), chain_type="stuff", retriever=vectordb.as_retriever())
+    
     # Run the RetrievalQA instance with the given question and store the results
     results = qa.run(question)
     return results
