@@ -1,5 +1,7 @@
 # Telegram Bot thing for Radio Messages
 
+This is pretty rough and ymmv, but it's fun to play around with.
+
 This Takes MP3s (trunking recorder) of Radio Messages (Unitrunker) and converts them to Text using Whisper (https://github.com/openai/whisper).
 It sends them to a Telegram bot, which listens for questions.
 Questions are processed using Langchain/ChatAI to produce answers.
