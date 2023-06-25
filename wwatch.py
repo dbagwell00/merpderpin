@@ -19,17 +19,24 @@ from langchain.vectorstores import Chroma
 from langchain.chains import RetrievalQA
 from langchain.llms import OpenAI
 from langchain.text_splitter import CharacterTextSplitter
+from langchain.text_splitter import RecursiveCharacterTextSplitter
+
 from langchain.chains.question_answering import load_qa_chain
 
-os.environ['OPENAI_API_KEY']="<ur other key>"
+
+
+os.environ['OPENAI_API_KEY']="ur-key"
+
+
+
+
 model = whisper.load_model("large")
-bot = telebot.TeleBot("<ur bot>")
-chat_id = "<chat id>"
+# set up the telegram bot
+bot = telebot.TeleBot("ur-key")
+chat_id = "ur-chat-id"
 start_time = time.time()
 folder_path = "/data/"
 processed_files = set()
-
-embeddings = OpenAIEmbeddings()
 
 
 def langthing(question):
@@ -39,7 +46,8 @@ def langthing(question):
     documents = loader.load()
 
     # Split documents into smaller chunks using CharacterTextSplitter
-    text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+    # text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
+    text_splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=0)
     texts = text_splitter.split_documents(documents)
 
     # Create embeddings using OpenAIEmbeddings
@@ -49,23 +57,27 @@ def langthing(question):
     vectordb = Chroma.from_documents(texts, embeddings)
 
     # Load a question-answering chain which uses an OpenAI LLM (language model) and 'map_reduce' chain type
-    # "stuff" seems to not complain
     # qa_chain = load_qa_chain(llm=OpenAI(), chain_type="map_reduce")
-    qa_chain = load_qa_chain(llm=OpenAI(), chain_type="stuff")
-    
+    # qa_chain = load_qa_chain(llm=OpenAI(), chain_type="stuff")
+
     # Initialize a RetrievalQA instance using the combine_documents_chain (qa_chain) and chroma vector store 'vectordb'
     # qa = RetrievalQA(combine_documents_chain=qa_chain, retriever=vectordb.as_retriever())
     qa = RetrievalQA.from_chain_type(llm=OpenAI(), chain_type="stuff", retriever=vectordb.as_retriever())
-    
+
     # Run the RetrievalQA instance with the given question and store the results
     results = qa.run(question)
+
     return results
+
 
 def process_file(file_path):
     attempt_count = 0
     max_attempts = 10
+    # Check if the file has already been processed
     if file_path in processed_files:
         return
+
+    # Wait for the file to finish writing
     while True:
         try:
             with open(file_path, 'rb') as f:
@@ -73,6 +85,7 @@ def process_file(file_path):
                 if f.read(128).startswith(b'TAG'):
                     break
         except Exception as error:
+            # print(error)
             time.sleep(1)
             attempt_count += 1
             if attempt_count >= max_attempts:
@@ -90,9 +103,9 @@ def process_file(file_path):
         group = split_last_part[2]
         sourceid = split_last_part[3].split('-')[0]
         source = split_last_part[3].split('-')[1]
+
         audio = AudioSegment.from_file(file_path)
         duration = int(len(audio) / 1000)
-
     except Exception as error:
         print(f'Audio Length Error: {error}')
         time.sleep(1)
@@ -108,7 +121,7 @@ def process_file(file_path):
     try:
         text = model.transcribe(file_path)
         message = text["text"]
-        reply_message = (f"On {datetime.now()} we think {sourceid} said to {groupid} (which is also known as {group}): {message}")
+        reply_message = (f"On {datetime.now()} we think {sourceid} said to {groupid} (which is also known as {group}): {message}\n")
         herps = open("./messages", "a")
         herps.write(reply_message)
         # herps.close()
@@ -120,7 +133,7 @@ def process_file(file_path):
 
     try:
 
-        reply_message = (f"On {datetime.now()} We think **{sourceid}** said to **{groupid}** (which is named {group}): \"{message}\"")
+        reply_message = (f"On {datetime.now()} We think **{sourceid}** said to **{groupid}** (which is named {group}): \"{message}\"\n")
         # \n\nAlso: {results}")
         bot.send_audio(chat_id, audio=open(file_path, 'rb'))
         bot.send_message(chat_id, reply_message, parse_mode='MARKDOWN')
@@ -134,9 +147,8 @@ def process_file(file_path):
 def echo_message(message):
     results = langthing(message.text)
     result_thing = (f"Asked: {message.text}.  Result: {results}")
-    # This sends the response to the same chat_id as the other messages.
-    # You could do like bot.reply_to(message, result_thing) to have it sent to your chat with the bot.
-    bot.send_message(chat_id, result_thing)
+    # bot.send_message(chat_id, result_thing)
+    bot.reply_to(message, result_thing)
 
 
 def start_polling():
