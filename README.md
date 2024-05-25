@@ -30,4 +30,12 @@ Some of the derpy things in there are because the script will attempt to load a 
 I launch it like this:
 docker run -it --entrypoint=bash --gpus all --mount source=radio,target=/data wwhisper
 
+For the ollama stuff to work, I just run the docker container like this:
+docker run -d -v ollama:/root/.ollama -p 11434:11434 --name ollama ollama/ollama
+
+Then on the whisper container you tell it to use that with something like:
+export OLLAMA_HOST=<urcomputerip:11434>
+
+You'll be able to talk to your bot and ask it questions about what's happened.  It's pretty neat!
+
 
