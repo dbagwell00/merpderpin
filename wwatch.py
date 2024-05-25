@@ -4,70 +4,27 @@ import telebot
 import whisper
 import re
 from pydub import AudioSegment
+
+__import__('pysqlite3')
+import sys
+sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+
 import chromadb
-
 import threading
-# from telebot.async_telebot import AsyncTeleBot
-# import asyncio
-
 from datetime import datetime
 
 
-from langchain.document_loaders import TextLoader
-from langchain.embeddings.openai import OpenAIEmbeddings
-from langchain.vectorstores import Chroma
-from langchain.chains import RetrievalQA
-from langchain.llms import OpenAI
-from langchain.text_splitter import CharacterTextSplitter
-from langchain.text_splitter import RecursiveCharacterTextSplitter
+# do the chroma things
+chromadb_client = chromadb.PersistentClient(path="./db")
+chromadb_collection = chromadb_client.get_or_create_collection(name="RADIO")
 
-from langchain.chains.question_answering import load_qa_chain
-
-
-
-os.environ['OPENAI_API_KEY']="ur-key"
-
-
-
-
+import ollama
 model = whisper.load_model("large")
-# set up the telegram bot
-bot = telebot.TeleBot("ur-key")
-chat_id = "ur-chat-id"
+bot = telebot.TeleBot("<ur telebot key")
+chat_id = "<ur chat id>"
 start_time = time.time()
 folder_path = "/data/"
 processed_files = set()
-
-
-def langthing(question):
-
-    # Load documents from the './messages' directory using TextLoader
-    loader = TextLoader("./messages")
-    documents = loader.load()
-
-    # Split documents into smaller chunks using CharacterTextSplitter
-    # text_splitter = CharacterTextSplitter(chunk_size=1000, chunk_overlap=0)
-    text_splitter = RecursiveCharacterTextSplitter(chunk_size=512, chunk_overlap=0)
-    texts = text_splitter.split_documents(documents)
-
-    # Create embeddings using OpenAIEmbeddings
-    embeddings = OpenAIEmbeddings()
-
-    # Initialize a Chroma vector store using embeddings created from the documents
-    vectordb = Chroma.from_documents(texts, embeddings)
-
-    # Load a question-answering chain which uses an OpenAI LLM (language model) and 'map_reduce' chain type
-    # qa_chain = load_qa_chain(llm=OpenAI(), chain_type="map_reduce")
-    # qa_chain = load_qa_chain(llm=OpenAI(), chain_type="stuff")
-
-    # Initialize a RetrievalQA instance using the combine_documents_chain (qa_chain) and chroma vector store 'vectordb'
-    # qa = RetrievalQA(combine_documents_chain=qa_chain, retriever=vectordb.as_retriever())
-    qa = RetrievalQA.from_chain_type(llm=OpenAI(), chain_type="stuff", retriever=vectordb.as_retriever())
-
-    # Run the RetrievalQA instance with the given question and store the results
-    results = qa.run(question)
-
-    return results
 
 
 def process_file(file_path):
@@ -104,6 +61,9 @@ def process_file(file_path):
         sourceid = split_last_part[3].split('-')[0]
         source = split_last_part[3].split('-')[1]
 
+        # group_markdown = telebot.formatting.escape_markdown(group)
+
+
         audio = AudioSegment.from_file(file_path)
         duration = int(len(audio) / 1000)
     except Exception as error:
@@ -122,9 +82,16 @@ def process_file(file_path):
         text = model.transcribe(file_path)
         message = text["text"]
         reply_message = (f"On {datetime.now()} we think {sourceid} said to {groupid} (which is also known as {group}): {message}\n")
-        herps = open("./messages", "a")
-        herps.write(reply_message)
-        # herps.close()
+
+        response = ollama.embeddings(model="mistral:latest", prompt=reply_message)
+        embedding = response["embedding"]
+        # print(f'embeddings: {embedding}')
+        chromadb_collection.add(
+                ids=[datetime.now().strftime('%Y%m%d%H%M%S')],
+                embeddings=[embedding],
+                documents=[reply_message])
+
+
         print(f'Message: {reply_message}')
     except Exception as error:
         print(f'Model error: {error}')
@@ -145,14 +112,30 @@ def process_file(file_path):
 
 @bot.message_handler(func=lambda message: True)
 def echo_message(message):
-    results = langthing(message.text)
-    result_thing = (f"Asked: {message.text}.  Result: {results}")
-    # bot.send_message(chat_id, result_thing)
-    bot.reply_to(message, result_thing)
+   prompt = f'You are a radio dispatcher and listen to radio messages coming in. Please list the relevant quotes from the source material in the list.  {message.text}'
+
+   response = ollama.embeddings(
+           prompt=prompt,
+           model="mistral:latest")
+
+   embedding_results = chromadb_collection.query(
+           query_embeddings=[response["embedding"]],
+           n_results=10)
+
+   test_data = embedding_results['documents']
+
+   test_output = ollama.generate(
+           model="mistral:latest",
+           prompt=f"Using this data: {test_data}.  Respond to this prompt: {prompt}"
+           )
+
+   result_thing = (f"Result: {test_output['response']}")
+   bot.send_message(chat_id, result_thing)
+   bot.reply_to(message, result_thing)
 
 
 def start_polling():
-    bot.infinity_polling()
+  bot.infinity_polling()
 
 polling_thread = threading.Thread(target=start_polling)
 polling_thread.start()
