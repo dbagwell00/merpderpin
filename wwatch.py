@@ -5,13 +5,14 @@ import whisper
 import re
 from pydub import AudioSegment
 import sys
-import chromadb
 import threading
+import ollama
 from datetime import datetime
 
 # Adjust SQLite module import
 __import__('pysqlite3')
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
+import chromadb
 
 # Initialize ChromaDB client and collection
 chromadb_client = chromadb.PersistentClient(path="./db")
@@ -19,8 +20,8 @@ chromadb_collection = chromadb_client.get_or_create_collection(name="RADIO")
 
 # Load Whisper model and initialize Telegram bot
 model = whisper.load_model("large")
-bot = telebot.TeleBot("<your_telebot_key>")
-chat_id = "<your_chat_id>"
+bot = telebot.TeleBot("<ur key>")
+chat_id = "<ur chat id>"
 start_time = time.time()
 folder_path = "/data/"
 processed_files = set()
@@ -91,13 +92,13 @@ def process_file(file_path):
         bot.send_message(chat_id, reply_message, parse_mode='MARKDOWN')
     except Exception as error:
         print(f'Telegram error: {error}')
-    
+
     print('------------------------------------')
     processed_files.add(file_path)
 
 @bot.message_handler(func=lambda message: True)
 def echo_message(message):
-    prompt = f'You are a radio dispatcher and listen to radio messages coming in. Please list the relevant quotes from the source material in the list. {message.text}'
+    prompt = f'You are a radio dispatcher and listen to radio messages coming in.  You are concise but detailed. {message.text}'
 
     response = ollama.embeddings(
         prompt=prompt,
@@ -106,7 +107,7 @@ def echo_message(message):
 
     embedding_results = chromadb_collection.query(
         query_embeddings=[response["embedding"]],
-        n_results=10
+        n_results=1024
     )
 
     test_data = embedding_results['documents']
@@ -138,3 +139,4 @@ while True:
                     except Exception as error:
                         print(f'Error processing file {file_path}: {error}')
     time.sleep(1)
+
