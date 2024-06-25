@@ -20,7 +20,7 @@ chromadb_collection = chromadb_client.get_or_create_collection(name="RADIO")
 
 # Load Whisper model and initialize Telegram bot
 model = whisper.load_model("large")
-bot = telebot.TeleBot("<ur key>")
+bot = telebot.TeleBot("<urid>")
 chat_id = "<ur chat id>"
 start_time = time.time()
 folder_path = "/data/"
@@ -68,20 +68,40 @@ def process_file(file_path):
 
     try:
         # Transcribe audio using Whisper
+
+        thedate = datetime.now().strftime('%Y-%m-%d')
+        thetime = datetime.now().strftime('%H:%M:%S')
         text = model.transcribe(file_path)
         message = text["text"]
-        reply_message = f"On {datetime.now()} we think {sourceid} said to {groupid} (which is also known as {group}): {message}\n"
+        reply_message = f"On {thedate} at {thetime} {sourceid} said to {group} ({groupid}): {message}\n"
 
-        # Get embeddings from Ollama and store in ChromaDB
-        response = ollama.embeddings(model="mistral:latest", prompt=reply_message)
-        embedding = response["embedding"]
-        chromadb_collection.add(
-            ids=[datetime.now().strftime('%Y%m%d%H%M%S')],
-            embeddings=[embedding],
-            documents=[reply_message]
-        )
+        metadata = {
+            "date": thedate,
+            "time": thetime,
+            "sourceid": sourceid,
+            "groupid": groupid,
+            "group": group
+        }
+
+        try:
+            # Get embeddings from Ollama and store in ChromaDB
+            response = ollama.embeddings(model="mistral:latest", prompt=reply_message)
+            embedding = response["embedding"]
+
+            chromadb_collection.add(
+                ids=[datetime.now().strftime('%Y%m%d%H%M%S')],
+                metadatas=[metadata],
+                embeddings=[embedding],
+                documents=[reply_message]
+            )
+
+            print("Successfully added the embedding to ChromaDB.")
+
+        except Exception as e:
+            print(f"An error occurred: {e}")
 
         print(f'Message: {reply_message}')
+
     except Exception as error:
         print(f'Model error: {error}')
         return
@@ -96,30 +116,54 @@ def process_file(file_path):
     print('------------------------------------')
     processed_files.add(file_path)
 
+def send_thinking_messages():
+    while not stop_thinking_event.is_set():
+        bot.send_message(chat_id, "Thinking...")
+        time.sleep(10)
+
 @bot.message_handler(func=lambda message: True)
 def echo_message(message):
-    prompt = f'You are a radio dispatcher and listen to radio messages coming in.  You are concise but detailed. {message.text}'
+    global stop_thinking_event
+    prompt = f'You are a radio dispatcher and listen to radio messages coming in.  You are able to infer meaning from the messages and are somewhat pedantic.  {message.text}'
+    print(f'Prompt sent: "{prompt}"')
 
-    response = ollama.embeddings(
-        prompt=prompt,
-        model="mistral:latest"
-    )
+    # Initialize the stop event for the thinking messages
+    stop_thinking_event = threading.Event()
+    thinking_thread = threading.Thread(target=send_thinking_messages)
+    thinking_thread.start()
 
-    embedding_results = chromadb_collection.query(
-        query_embeddings=[response["embedding"]],
-        n_results=1024
-    )
+    try:
+        response = ollama.embeddings(
+            prompt=prompt,
+            model="mistral:latest"
+        )
 
-    test_data = embedding_results['documents']
+        embedding_results = chromadb_collection.query(
+            query_embeddings=[response["embedding"]],
+            n_results=1024
+        )
 
-    test_output = ollama.generate(
-        model="mistral:latest",
-        prompt=f"Using this data: {test_data}. Respond to this prompt: {prompt}"
-    )
+        test_data = embedding_results['documents']
 
-    result_thing = f"Result: {test_output['response']}"
-    bot.send_message(chat_id, result_thing)
-    bot.reply_to(message, result_thing)
+        test_output = ollama.generate(
+            model="mistral:latest",
+            prompt=f"Using this data: {test_data}. Respond to this prompt: {prompt}"
+        )
+
+        result_thing = f"Result: {test_output['response']}"
+
+        # Stop the thinking messages thread
+        stop_thinking_event.set()
+        thinking_thread.join()
+
+        bot.send_message(chat_id, result_thing)
+        bot.reply_to(message, result_thing)
+    except Exception as e:
+        # Ensure the thinking thread stops even if there's an error
+        stop_thinking_event.set()
+        thinking_thread.join()
+        bot.send_message(chat_id, "An error occurred while processing your request.")
+        print(f'Error: {e}')
 
 def start_polling():
     bot.infinity_polling()
@@ -139,4 +183,3 @@ while True:
                     except Exception as error:
                         print(f'Error processing file {file_path}: {error}')
     time.sleep(1)
-
