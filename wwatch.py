@@ -9,6 +9,11 @@ import threading
 import ollama
 from datetime import datetime
 
+import osmnx as ox
+
+import spacy
+nlp = spacy.load("en_core_web_sm")
+
 # Adjust SQLite module import
 __import__('pysqlite3')
 sys.modules['sqlite3'] = sys.modules.pop('pysqlite3')
@@ -25,6 +30,28 @@ chat_id = "<ur chat id>"
 start_time = time.time()
 folder_path = "/data/"
 processed_files = set()
+
+
+def process_message(message):
+    doc = nlp(message)
+    processed_prompt_tokens = [token.lemma_ for token in doc if not token.is_stop]
+    processed_prompt = ' '.join(processed_prompt_tokens)
+    nouns = [chunk.text for chunk in doc.noun_chunks]
+    verbs = [token.lemma_ for token in doc if token.pos_ == "VERB"]
+    entities = [(entity.text, entity.label_) for entity in doc.ents]
+
+
+    result_dict = {
+        "message": message,
+        "no_stop_words": processed_prompt,
+        "nouns": nouns,
+        "verbs": verbs,
+        "entities": entities
+    }
+
+    print(f"We're processing the radio message:\n\n{result_dict}")
+    return result_dict
+
 
 def process_file(file_path):
     if file_path in processed_files:
@@ -72,20 +99,31 @@ def process_file(file_path):
         thedate = datetime.now().strftime('%Y-%m-%d')
         thetime = datetime.now().strftime('%H:%M:%S')
         text = model.transcribe(file_path)
-        message = text["text"]
-        reply_message = f"On {thedate} at {thetime} {sourceid} said to {group} ({groupid}): {message}\n"
+        # message = text["text"]
+        message = process_message(text["text"])
+
+        message_post_process = message["message"]
+        verbs = ', '.join(message["verbs"]) if message["verbs"] else "None"   # Convert list to comma-separated string or default to "None"
+        nouns = ', '.join(message["nouns"])   # Convert list to comma-separated string
+        entities = ', '.join([f"{entity[0]} ({entity[1]})" for entity in message["entities"]])  # Convert list of tuples to formatted strings
+
+
+        reply_message = f"On *{thedate}* at *{thetime}* *{sourceid}* said to *{group}* (also known as *{groupid}*)\n\n*{message_post_process}*.\n\nverbs: {verbs}\nnouns: {nouns}\nentities: {entities}\n"
 
         metadata = {
             "date": thedate,
             "time": thetime,
             "sourceid": sourceid,
             "groupid": groupid,
-            "group": group
+            "group": group,
+            "verbs": verbs,
+            "nouns": nouns,
+            "entities": entities
         }
 
         try:
             # Get embeddings from Ollama and store in ChromaDB
-            response = ollama.embeddings(model="mistral:latest", prompt=reply_message)
+            response = ollama.embeddings(model="llama3.1", prompt=reply_message)
             embedding = response["embedding"]
 
             chromadb_collection.add(
@@ -95,12 +133,12 @@ def process_file(file_path):
                 documents=[reply_message]
             )
 
-            print("Successfully added the embedding to ChromaDB.")
+            print(f"\nSuccessfully added the embedding to ChromaDB.")
 
         except Exception as e:
             print(f"An error occurred: {e}")
 
-        print(f'Message: {reply_message}')
+        print(f"Here's the message we embedded into ChromaDB:\n\n{reply_message}")
 
     except Exception as error:
         print(f'Model error: {error}')
@@ -121,11 +159,52 @@ def send_thinking_messages():
         bot.send_message(chat_id, "Thinking...")
         time.sleep(10)
 
+def process_prompt(prompt):
+    doc = nlp(prompt)
+    processed_prompt_tokens = [token.lemma_ for token in doc if not token.is_stop]
+    processed_prompt = ' '.join(processed_prompt_tokens)
+    nouns = [chunk.text for chunk in doc.noun_chunks]
+    verbs = [token.lemma_ for token in doc if token.pos_ == "VERB"]
+    entities = [(entity.text, entity.label_) for entity in doc.ents]
+    preprompt = "As a radio dispatcher, summarize and provide insights based on past messages."
+    sending = (f"{preprompt} {prompt} Nouns: {', '.join(nouns)} Verbs: {', '.join(verbs)} Entities: {entities}")
+    # sending = (f"{preprompt} {prompt}")
+    print(f"Sending: {sending}")
+    return sending
+
+def process_relevant_data(documents):
+    if not documents:
+        return "No relevant data found."
+
+    relevant_info_list = []
+
+    for sublist in documents:
+
+        for doc_text in sublist:
+            doc = nlp(doc_text)
+
+            processed_doc_tokens = [token.lemma_ for token in doc if not token.is_stop]
+
+            processed_doc = ' '.join(processed_doc_tokens)
+
+            nouns = [chunk.text for chunk in doc.noun_chunks]
+            verbs = [token.lemma_ for token in doc if token.pos_ == "VERB"]
+            entities = [(entity.text, entity.label_) for entity in doc.ents]
+            sending = (f"Document: {doc_text}Nouns: {', '.join(nouns)}\nVerbs: {', '.join(verbs)}\nEntities: {entities}\n\n")
+            print(sending)
+            relevant_info_list.append(sending)
+
+    # Join all processed documents into one string for output
+    relevant_info = "\n\n".join(relevant_info_list)
+    return relevant_info
+
+
+
 @bot.message_handler(func=lambda message: True)
 def echo_message(message):
     global stop_thinking_event
-    prompt = f'You are a radio dispatcher and listen to radio messages coming in.  You are able to infer meaning from the messages and are somewhat pedantic.  {message.text}'
-    print(f'Prompt sent: "{prompt}"')
+    # prompt = f'{message.text}'
+    prompt = process_prompt(message.text)
 
     # Initialize the stop event for the thinking messages
     stop_thinking_event = threading.Event()
@@ -133,21 +212,37 @@ def echo_message(message):
     thinking_thread.start()
 
     try:
+
         response = ollama.embeddings(
             prompt=prompt,
-            model="mistral:latest"
+            model="llama3.1"
         )
+
+        # print(f"Response from the embeddings: {response}")
 
         embedding_results = chromadb_collection.query(
             query_embeddings=[response["embedding"]],
-            n_results=1024
+            n_results=1000
         )
 
-        test_data = embedding_results['documents']
+        filtered_results = [
+            (doc, sim) for doc, sim in zip(embedding_results['documents'], embedding_results['distances'])
+            if sim > 0.7  # Similarity threshold set to 0.7
+        ]
+
+
+        # for key, value in embedding_results.items():
+        #     print(f"{key}: {value}")
+
+        # print(f"Results from the first query: {embedding_results['documents']}")
+        # relevant_data = process_relevant_data(embedding_results['documents'])
+        relevant_data = process_relevant_data(filtered_results['documents'])
+
+        # print(f'relevant_data: {relevant_data}')
 
         test_output = ollama.generate(
-            model="mistral:latest",
-            prompt=f"Using this data: {test_data}. Respond to this prompt: {prompt}"
+            model="llama3.1",
+            prompt=f"Using this data: {relevant_data}. Respond to this prompt: {prompt}"
         )
 
         result_thing = f"Result: {test_output['response']}"
